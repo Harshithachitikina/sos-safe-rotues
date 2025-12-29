@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Emergency SOS - Live Directions</title>
+    
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@latest/dist/leaflet-routing-machine.css" />
+    <script src="https://unpkg.com/leaflet-routing-machine@latest/dist/leaflet-routing-machine.js"></script>
+
+    <style>
+        :root { --red: #b71c1c; --green: #1b5e20; --white: #ffffff; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; background: #f4f4f4; color: #333; }
+        
+        header { background: var(--red); color: white; padding: 15px; text-align: center; position: sticky; top: 0; z-index: 1001; box-shadow: 0 2px 5px rgba(0,0,0,0.2); }
+        
+        .container { padding: 15px; max-width: 800px; margin: auto; }
+        #map { height: 350px; width: 100%; border-radius: 12px; border: 2px solid var(--red); margin-bottom: 15px; }
+
+        .hidden { display: none !important; }
+
+        /* Status & Distance Cards */
+        .card { background: white; padding: 15px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); margin-bottom: 15px; }
+        .info-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #eee; padding-bottom: 10px; margin-bottom: 10px; }
+        .dist-txt { background: var(--green); color: white; padding: 5px 12px; border-radius: 20px; font-weight: bold; }
+
+        /* Directions Panel */
+        #instructions { max-height: 200px; overflow-y: auto; background: #fff; padding: 10px; border-radius: 8px; border: 1px solid #ddd; font-size: 14px; }
+        .step { padding: 8px; border-bottom: 1px solid #eee; display: flex; align-items: center; }
+        .step:last-child { border-bottom: none; }
+        .step-icon { margin-right: 10px; font-size: 18px; }
+
+        /* Emergency Contact Grid */
+        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+        .contact-btn { background: #fff; border: 1px solid #ddd; padding: 10px; border-radius: 8px; text-decoration: none; color: #333; font-weight: bold; font-size: 13px; display: flex; flex-direction: column; align-items: center; }
+        .contact-btn span { color: var(--red); margin-top: 5px; }
+
+        /* Big SOS Button */
+        .sos-trigger { background: var(--red); color: white; width: 100%; padding: 25px; font-size: 22px; font-weight: bold; border: none; border-radius: 15px; cursor: pointer; box-shadow: 0 5px 15px rgba(183, 28, 28, 0.4); }
+    </style>
+</head>
+<body>
+
+<header>
+    <h2 style="margin:0;">🚨 GUDLAVALLERU EMERGENCY</h2>
+</header>
+
+<div class="container">
+    <div id="startScreen">
+        <div style="text-align: center; margin-top: 50px;">
+            <p style="font-size: 18px; color: #666;">In case of emergency, tap below for the safe zone path and help lines.</p>
+            <button class="sos-trigger" onclick="initEmergency()">ACTIVATE EMERGENCY MODE</button>
+        </div>
+    </div>
+
+    <div id="navScreen" class="hidden">
+        <div class="card">
+            <div class="info-header">
+                <strong style="color: var(--green);">📍 TO: SAFE ASSEMBLY POINT</strong>
+                <span id="distanceLabel" class="dist-txt">--- m</span>
+            </div>
+            <div id="map"></div>
+            
+            <strong>↪️ NAVIGATION DIRECTIONS</strong>
+            <div id="instructions">
+                <div class="step">Waiting for GPS signal...</div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h3 style="margin-top:0;">📞 EMERGENCY CONTACTS</h3>
+            <div class="grid">
+                <a href="tel:112" class="contact-btn">Emergency <span>Dial 112</span></a>
+                <a href="tel:08674273333" class="contact-btn">Police Station <span>08674-273333</span></a>
+                <a href="tel:108" class="contact-btn">Ambulance <span>Dial 108</span></a>
+                <a href="tel:8331890873" class="contact-btn">Health Centre <span>83318-90873</span></a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    let map, routingControl, userMarker;
+    const safeZone = [16.3577, 81.0446];
+
+    function initEmergency() {
+        document.getElementById('startScreen').classList.add('hidden');
+        document.getElementById('navScreen').classList.remove('hidden');
+
+        map = L.map('map').setView(safeZone, 15);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+
+        // Green Marker for Safe Zone
+        L.circleMarker(safeZone, { radius: 12, color: 'white', weight: 3, fillColor: 'green', fillOpacity: 1 }).addTo(map)
+            .bindPopup("<b>SAFE ZONE</b><br>Stay here until clear.").openPopup();
+
+        if (navigator.geolocation) {
+            navigator.geolocation.watchPosition(updateLocation, handleGPSSharingError, { enableHighAccuracy: true });
+        } else {
+            alert("Please enable GPS for navigation.");
+        }
+    }
+
+    function updateLocation(pos) {
+        const userLoc = [pos.coords.latitude, pos.coords.longitude];
+
+        if (routingControl) { map.removeControl(routingControl); }
+
+        routingControl = L.Routing.control({
+            waypoints: [L.latLng(userLoc[0], userLoc[1]), L.latLng(safeZone[0], safeZone[1])],
+            router: L.Routing.osrmv1({ profile: 'foot' }),
+            addWaypoints: false,
+            draggableWaypoints: false,
+            show: false, // Hide the default white box so we can use our custom one
+            lineOptions: { styles: [{ color: '#1b5e20', weight: 7 }] }
+        }).on('routesfound', function(e) {
+            const route = e.routes[0];
+            
+            // Update Distance Badge
+            document.getElementById('distanceLabel').innerText = Math.round(route.summary.totalDistance) + " meters";
+
+            // Update Directions Panel
+            const instructionsDiv = document.getElementById('instructions');
+            instructionsDiv.innerHTML = ''; 
+
+            route.instructions.forEach((instr) => {
+                const stepDiv = document.createElement('div');
+                stepDiv.className = 'step';
+                stepDiv.innerHTML = `<span class="step-icon">➤</span> ${instr.text} (${Math.round(instr.distance)}m)`;
+                instructionsDiv.appendChild(stepDiv);
+            });
+        }).addTo(map);
+
+        // Update User Marker
+        if (!userMarker) {
+            userMarker = L.circleMarker(userLoc, { radius: 8, color: 'white', weight: 2, fillColor: '#1565c0', fillOpacity: 1 }).addTo(map);
+        } else {
+            userMarker.setLatLng(userLoc);
+        }
+
+        map.invalidateSize();
+    }
+
+    function handleGPSSharingError() {
+        document.getElementById('instructions').innerHTML = "<div class='step' style='color:red;'>⚠️ GPS Error: Check location settings.</div>";
+    }
+</script>
+
+</body>
+</html>
